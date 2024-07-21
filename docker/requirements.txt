@@ -1,22 +1,2 @@
-audiomentations
-einops
-hydra-core
-librosa
-lpips
-matplotlib
-moviepy
-numpy
+onnxruntime-gpu
 opencv-python
-Pillow==10.3.0
-requests
-scipy
-timm
-tqdm
-transformers
-wandb
-pydub
-draccus
-git+ssh://git@github.com/marzvfx/facer@3531d93
-git+https://github.com/m-bain/whisperx.git@main
-onnx ==1.16.1
-onnxscript
