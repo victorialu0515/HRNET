@@ -6,6 +6,7 @@ from HRNET.utils import ModelType, filter_person_detections
 
 # Initialize Pose Estimation model
 model_path = "models/hrnet_coco_w48_384x288.onnx"
+# model_path = "models/litehrnet_30_coco_384x288.onnx"
 model_type = ModelType.COCO
 hrnet = HRNET(model_path, model_type, conf_thres=0.5)
 
@@ -16,7 +17,7 @@ person_detector = PersonDetector(person_detector_path)
 # Read image
 img_url = "https://upload.wikimedia.org/wikipedia/commons/e/ea/Flickr_-_The_U.S._Army_-_%27cavalry_charge%27.jpg"
 img = imread_from_url(img_url)
-img = cv2.imread("input.png")
+# img = cv2.imread("input.png")
 
 # Detect People in the image
 detections = person_detector(img)
@@ -33,7 +34,7 @@ if ret:
     # Draw detections
     # img = person_detector.draw_detections(img)
 
-cv2.namedWindow("Model Output", cv2.WINDOW_NORMAL)
-cv2.imshow("Model Output", img)
-cv2.imwrite("ONNX-HRNET-Human-Pose-Estimation/doc/img/output.jpg", img)
-cv2.waitKey(0)
+# cv2.namedWindow("Model Output", cv2.WINDOW_NORMAL)
+# cv2.imshow("Model Output", img)
+cv2.imwrite("outputs/output_multi.jpg", img)
+# cv2.waitKey(0)

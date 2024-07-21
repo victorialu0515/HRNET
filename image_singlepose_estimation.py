@@ -5,6 +5,7 @@ from HRNET import HRNET, ModelType
 
 # Initialize inference model
 model_path = "models/hrnet_coco_w48_384x288.onnx"
+# model_path = "models/litehrnet_30_coco_384x288.onnx"
 model_type = ModelType.COCO
 hrnet = HRNET(model_path, model_type, conf_thres=0.6)
 
@@ -17,7 +18,7 @@ total_heatmap, peaks = hrnet(img)
 
 # Draw Model Output
 output_img = hrnet.draw_pose(img)
-cv2.namedWindow("Model Output", cv2.WINDOW_NORMAL)
-cv2.imshow("Model Output", output_img)
-cv2.imwrite("ONNX-HRNET-Human-Pose-Estimation/doc/img/output.jpg", output_img)
-cv2.waitKey(0)
+# cv2.namedWindow("Model Output", cv2.WINDOW_NORMAL)
+# cv2.imshow("Model Output", output_img)
+cv2.imwrite("outputs/output_single.jpg", img)
+# cv2.waitKey(0)
