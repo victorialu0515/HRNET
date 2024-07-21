@@ -9,3 +9,12 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': 'Hello from Lambda!'
     }
+
+
+if __name__ == '__main__':
+    event = {
+        'key1': 'value1',
+        'key2': 'value2',
+        'key3': 'value3'
+    }
+    lambda_handler(event, None)
