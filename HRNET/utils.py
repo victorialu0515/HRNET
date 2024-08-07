@@ -55,7 +55,8 @@ def get_vis_info(model_type):
         raise ValueError("Unknown model type")
 
 def valid_point(point):
-    return point[0] >= 0 and point[1] >= 0
+    return point[0] > 0 and point[1] > 0
+    #modified
 
 def draw_skeletons(img, keypoints, modeltype):
     output_img = img.copy()
