@@ -4,6 +4,7 @@ import os
 from HRNET import HRNET, ModelType
 import base64
 from datetime import datetime
+from tempfile import TemporaryDirectory
 import cv2
 import json
 def drawPoses(
@@ -59,34 +60,46 @@ def upload_file(file_name, bucket, object_name=None):
     return True
 
 def lambda_handler(event, context):
-    model_path = "models/hrnet_coco_w48_384x288.onnx"
-    model_type = ModelType.COCO
-    hrnet = HRNET(model_path, model_type, conf_thres=0.5)
+    with TemporaryDirectory() as tmp_dir:
+        os.chdir(tmp_dir)
+        s3 = boto3.client('s3')
+        model_key = "hrnet_coco_w48_384x288.onnx"
 
-    querystring = event.get('queryStringParameters', event)
-    image_b64 = querystring.get("image")
+        model_path = "hrnet_coco_w48_384x288.onnx"
+        try:
+            s3.download_file("model1234", model_key, model_path)
+        except Exception as e:
+            print("Error:", e)
+            return
 
-    image_path = '/tmp/decode.jpg'
-    decodeString(image_b64, image_path)
+        # model_path = "models/hrnet_coco_w48_384x288.onnx"
+        model_type = ModelType.COCO
+        hrnet = HRNET(model_path, model_type, conf_thres=0.5)
 
-    img = cv2.imread(image_path)
+        querystring = event.get('queryStringParameters', event)
+        image_b64 = querystring.get("image")
 
-    total_heatmap, peaks = hrnet(img)
-    output_img = hrnet.draw_pose(img)
-    cv2.imwrite(image_path, output_img)
+        image_path = 'decode.jpg'
+        decodeString(image_b64, image_path)
 
-    upload_file(image_path, "model1234", f"hrnet-{datetime.now().strftime('%Y, %m, %d, %H, %M, %S')}.jpg")
+        img = cv2.imread(image_path)
+
+        total_heatmap, peaks = hrnet(img)
+        output_img = hrnet.draw_pose(img)
+        cv2.imwrite(image_path, output_img)
+
+        upload_file(image_path, "model1234", f"hrnet-{datetime.now().strftime('%Y, %m, %d, %H, %M, %S')}.jpg")
 
 
-    print(f'boto3 version: {boto3.__version__}')
-    print(f'botocore version: {botocore.__version__}')
-    return {
-        'statusCode': 200,
-        'body': json.dumps({
-            "poses": hrnet.poses.tolist()
-        })
+        print(f'boto3 version: {boto3.__version__}')
+        print(f'botocore version: {botocore.__version__}')
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                "poses": hrnet.poses.tolist()
+            })
 
-    }
+        }
 
 
 if __name__ == '__main__':
