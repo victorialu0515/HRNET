@@ -6,7 +6,7 @@ RUN yum install -y mesa-libGL
 
 # Install requirements
 COPY docker/requirements.txt ${LAMBDA_TASK_ROOT}
-RUN pip install -r requirements.txt
+RUN pip install --only-binary=:all: -r requirements.txt
 
 # Copy stuff
 COPY HRNET ${LAMBDA_TASK_ROOT}/HRNET

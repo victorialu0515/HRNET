@@ -16,7 +16,7 @@ YoloV6 (ONNX)
 https://colab.research.google.com/drive/1pke1ffMeI2dXkIAbzp6IHWdQ0u8S6I0n?usp=sharing
 
 Input example:
-````
+```
 {
     "queryStringParameters":
         {

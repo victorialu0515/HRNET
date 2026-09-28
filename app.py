@@ -1,12 +1,21 @@
 import boto3
 import botocore
 import os
-from HRNET import HRNET, ModelType
+from HRNET import HRNET, ModelType, PersonDetector, filter_person_detections
 import base64
 from datetime import datetime
 from tempfile import TemporaryDirectory
 import cv2
 import json
+import numpy as np
+import uuid
+from decimal import *
+
+# Loaded once per container (warm-start reuse) rather than per invocation. Paths are rooted at
+# LAMBDA_TASK_ROOT (/var/task) since the handler later os.chdir()s into a scratch tmp dir.
+_MODELS_DIR = os.path.join(os.environ.get("LAMBDA_TASK_ROOT", ".."), "models")
+hrnet = HRNET(os.path.join(_MODELS_DIR, "hrnet_coco_w48_384x288.onnx"), ModelType.COCO, conf_thres=0.5)
+person_detector = PersonDetector(os.path.join(_MODELS_DIR, "yolov6s.onnx"), conf_thres=0.4, iou_thres=0.5)
 def drawPoses(
         img_path: str,
         hrnet: HRNET,
@@ -60,46 +69,72 @@ def upload_file(file_name, bucket, object_name=None):
     return True
 
 def lambda_handler(event, context):
+
+    # Initialize a session using Amazon DynamoDB
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-2')
+
+    # Replace 'your_table_name' with your DynamoDB table name
+    table = dynamodb.Table('hrnet')
+
+
+    body = event
+    if event.get("httpMethod") == "POST":
+        body = json.loads(event.get("body"))
+    elif event.get("httpMethod") == "GET":
+        body = event.get('queryStringParameters', event)
+
+    image_b64 = body.get("image")
+
     with TemporaryDirectory() as tmp_dir:
         os.chdir(tmp_dir)
-        s3 = boto3.client('s3')
-        model_key = "hrnet_coco_w48_384x288.onnx"
-
-        model_path = "hrnet_coco_w48_384x288.onnx"
         try:
-            s3.download_file("model1234", model_key, model_path)
+            image_path = 'decode.jpg'
+            decodeString(image_b64, image_path)
+
+            img = cv2.imread(image_path)
+
+            # Crop to the detected person before running pose estimation -- HRNet's input is a fixed
+            # 384x288, so on a full-frame photo where the climber is only part of the image, resizing the
+            # whole frame down makes every joint too small to clear the confidence threshold. Falls back to
+            # the whole-image estimate if no person is confidently detected (e.g. unusual climbing pose).
+            boxes, scores, class_ids = person_detector(img)
+            has_person, (p_boxes, p_scores, p_class_ids) = filter_person_detections((boxes, scores, class_ids))
+            if has_person:
+                best = int(np.argmax(p_scores))
+                _, poses_list = hrnet.update_with_detections(img, ([p_boxes[best]], [p_scores[best]], [p_class_ids[best]]))
+                pose = poses_list[0]
+                hrnet.poses = pose  # so draw_pose renders this single skeleton, matching the no-crop response shape
+            else:
+                _, pose = hrnet.update(img)
+
+            output_img = hrnet.draw_pose(img)
+            cv2.imwrite(image_path, output_img)
+
+            s3Key = f"hrnet-{datetime.now().strftime('%Y, %m, %d, %H, %M, %S')}.jpg"
+            upload_file(image_path, "model1234", s3Key)
+
+            poseList = pose.tolist()
+            poses = [[Decimal(str(x)) for x in sublist] for sublist in poseList]
+            data = {"time": datetime.now().strftime('%Y, %m, %d, %H, %M, %S'), "user_id": str(uuid.uuid4()),
+                    "result": poses, "s3Key": s3Key}
+
+            table.put_item(
+                Item=data
+            )
+
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    "poses": poseList,
+                    "personDetected": has_person
+                })
+            }
         except Exception as e:
             print("Error:", e)
-            return
-
-        # model_path = "models/hrnet_coco_w48_384x288.onnx"
-        model_type = ModelType.COCO
-        hrnet = HRNET(model_path, model_type, conf_thres=0.5)
-
-        querystring = event.get('queryStringParameters', event)
-        image_b64 = querystring.get("image")
-
-        image_path = 'decode.jpg'
-        decodeString(image_b64, image_path)
-
-        img = cv2.imread(image_path)
-
-        total_heatmap, peaks = hrnet(img)
-        output_img = hrnet.draw_pose(img)
-        cv2.imwrite(image_path, output_img)
-
-        upload_file(image_path, "model1234", f"hrnet-{datetime.now().strftime('%Y, %m, %d, %H, %M, %S')}.jpg")
-
-
-        print(f'boto3 version: {boto3.__version__}')
-        print(f'botocore version: {botocore.__version__}')
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                "poses": hrnet.poses.tolist()
-            })
-
-        }
+            return {
+                'statusCode': 500,
+                'body': json.dumps({"error": str(e)})
+            }
 
 
 if __name__ == '__main__':
@@ -110,6 +145,7 @@ if __name__ == '__main__':
         f.write(encoded_string)
 
     event = {
+        "httpMethod": "GET",
         "queryStringParameters":
             {
                 "image": encoded_string,

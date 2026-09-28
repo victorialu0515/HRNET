@@ -42,11 +42,20 @@ class YOLOv6:
 
         input_img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # Resize input image
-        input_img = cv2.resize(input_img, (self.input_width, self.input_height))
+        # Letterbox resize (preserve aspect ratio, pad to square) instead of a naive stretch -- a plain
+        # cv2.resize to a square input badly distorts tall portrait photos (e.g. phone shots), which pushed
+        # real person detections below threshold. self.scale/self.pad_left/self.pad_top are recorded here so
+        # extract_boxes can map predicted boxes back to original image coordinates.
+        self.scale = min(self.input_width / self.img_width, self.input_height / self.img_height)
+        new_w, new_h = int(round(self.img_width * self.scale)), int(round(self.img_height * self.scale))
+        resized = cv2.resize(input_img, (new_w, new_h))
+        self.pad_left = (self.input_width - new_w) // 2
+        self.pad_top = (self.input_height - new_h) // 2
+        canvas = np.full((self.input_height, self.input_width, 3), 114, dtype=np.uint8)
+        canvas[self.pad_top:self.pad_top + new_h, self.pad_left:self.pad_left + new_w] = resized
 
         # Scale input pixel values to 0 to 1
-        input_img = input_img / 255.0
+        input_img = canvas / 255.0
         input_img = input_img.transpose(2, 0, 1)
         input_tensor = input_img[np.newaxis, :, :, :].astype(np.float32)
 
@@ -68,15 +77,23 @@ class YOLOv6:
         predictions = predictions[obj_conf > self.conf_threshold]
         obj_conf = obj_conf[obj_conf > self.conf_threshold]
 
+        if len(predictions) == 0:
+            return np.empty((0, 4)), np.empty((0,)), np.empty((0,), dtype=int)
+
         # Multiply class confidence with bounding box confidence
         predictions[:, 5:] *= obj_conf[:, np.newaxis]
 
         # Get the scores
         scores = np.max(predictions[:, 5:], axis=1)
 
-        # Filter out the objects with a low score
-        predictions = predictions[obj_conf > self.conf_threshold]
-        scores = scores[scores > self.conf_threshold]
+        # Filter out the objects with a low score -- must re-filter predictions by the SAME mask, not just
+        # scores, or boxes/class_ids end up a different length than scores and get mismatched below.
+        mask = scores > self.conf_threshold
+        predictions = predictions[mask]
+        scores = scores[mask]
+
+        if len(predictions) == 0:
+            return np.empty((0, 4)), np.empty((0,)), np.empty((0,), dtype=int)
 
         # Get the class with the highest confidence
         class_ids = np.argmax(predictions[:, 5:], axis=1)
@@ -90,12 +107,13 @@ class YOLOv6:
         return boxes[indices], scores[indices], class_ids[indices]
 
     def extract_boxes(self, predictions):
-        # Extract boxes from predictions
-        boxes = predictions[:, :4]
+        # Extract boxes from predictions (cx, cy, w, h in letterboxed input-pixel space)
+        boxes = predictions[:, :4].copy()
 
-        # Scale boxes to original image dimensions
-        boxes /= np.array([self.input_width, self.input_height, self.input_width, self.input_height])
-        boxes *= np.array([self.img_width, self.img_height, self.img_width, self.img_height])
+        # Undo the letterbox padding/scale from prepare_input to map back to original image coordinates
+        boxes[:, 0] -= self.pad_left
+        boxes[:, 1] -= self.pad_top
+        boxes /= self.scale
 
         # Convert boxes to xyxy format
         boxes = xywh2xyxy(boxes)
